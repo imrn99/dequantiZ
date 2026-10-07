@@ -1,20 +1,39 @@
 const std = @import("std");
 
-const DType = enum {
+pub const DType = enum {
     bfl16,
     fl32,
     un8,
     fl8_e4m3,
+
+    fn sizeOf(self: *const @This()) usize {
+        switch (self) {
+            .bfl16 => {
+                return 2;
+            },
+            .fl32 => {
+                return 4;
+            },
+            .un8 => {
+                return 1;
+            },
+            .fl8_e4m3 => {
+                return 1;
+            },
+        }
+    }
 };
 
-const BlockInitError = error{ FailedDeser, UnknownDType };
+pub const BlockInitError = error{ FailedDeser, UnknownDType };
 
-fn BlockMetaData(DIM: comptime_int) type {
+pub fn BlockMetaData(DIM: comptime_int) type {
     return struct {
         dtype: DType,
         shape: [DIM]usize,
         offsets: struct { start: usize, end: usize },
 
+        // probably a bad interface, it takes an allocator but
+        // the resulting struct doesn't require deinit call
         pub fn parseFromSlice(
             allocator: std.mem.Allocator,
             s: []const u8,
