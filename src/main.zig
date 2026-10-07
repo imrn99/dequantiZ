@@ -10,13 +10,16 @@ pub fn main(init: std.process.Init) !void {
     const arena: std.mem.Allocator = init.arena.allocator();
 
     const io = init.io;
-    const st_file = Io.failingDirOpenFile(null, Io.Dir.cwd(), "/" ++ TENSOR_FILE, .{}) catch |e|
+    const st_file = Io.Dir.cwd().openFile(io, TENSOR_FILE, .{}) catch |e|
         {
             std.log.err("while opening tensor file: {}", .{e});
             return;
         };
-    const tmp: [8]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0 };
-    const n = st_file.readPositionalAll(io, @constCast(&tmp), 0) catch |e| {
+    defer st_file.close(io);
+
+    // header size
+    var tmp: [8]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0 };
+    const n = st_file.readPositionalAll(io, &tmp, 0) catch |e| {
         std.log.err("{}", .{e});
         return;
     };
@@ -25,17 +28,23 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
     const header_size: u64 = @bitCast(tmp);
-    var header_blob: std.ArrayList(u8) = std.ArrayList(u8).initCapacity(arena, @intCast(header_size)) catch |e| {
+    std.log.info("header size = {}", .{header_size});
+
+    // header content
+    var reader_buf: [1024]u8 = undefined;
+    var reader = st_file.reader(io, &reader_buf);
+    const header_blob = reader.interface.readAllocAll(arena, @intCast(header_size + 8)) catch |e| {
         std.log.err("{}", .{e});
         return;
     };
-    defer header_blob.deinit(arena);
-    const nn = st_file.readPositionalAll(io, @constCast(header_blob.items), 0) catch |e| {
-        std.log.err("{}", .{e});
-        return;
-    };
-    if (nn != header_blob.capacity) {
-        std.log.err("{s}", .{"mismatch between read data and expected header length"});
+    if (header_blob.len != @as(usize, header_size + 8)) {
+        std.log.err("...", .{});
         return;
     }
+
+    // dump stdout to file for verification
+    //var stdout_buffer: [1024]u8 = undefined;
+    //var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
+    //try stdout_file_writer.interface.print("{s}\n", .{header_blob[8..]});
+    //try stdout_file_writer.flush();
 }
