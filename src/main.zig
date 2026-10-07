@@ -5,6 +5,7 @@ const dequantiZ = @import("dequantiZ");
 
 const TENSOR_FILE = "model.safetensors";
 const LAYER: u4 = 0; // ref model has 16 layers, all with the same structure
+const TEST_LAYER_DESER = "layers.9.self_attn.q_proj.weight_scale_2";
 
 pub fn main(init: std.process.Init) !void {
     const arena: std.mem.Allocator = init.arena.allocator();

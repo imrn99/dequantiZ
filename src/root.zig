@@ -2,6 +2,8 @@
 const std = @import("std");
 const Io = std.Io;
 
+const layer = @import("layer.zig");
+
 /// This is a documentation comment to explain the `printAnotherMessage` function below.
 ///
 /// Accepting an `Io.Writer` instance is a handy way to write reusable code.
