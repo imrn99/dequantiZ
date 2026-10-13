@@ -5,7 +5,7 @@ const std = @import("std");
 // look up tables are initialized using decode functions for some verification/redundancy
 
 pub const E2M1_LUT = buildLookupTableE2M1();
-pub const E4M3_LUT = buildLookupTableE2M1();
+pub const E4M3_LUT = buildLookupTableE4M3();
 
 fn buildLookupTableE2M1() [16]f32 {
     var out: [16]f32 = undefined;
@@ -19,11 +19,12 @@ fn buildLookupTableE2M1() [16]f32 {
 }
 
 fn buildLookupTableE4M3() [256]f32 {
+    @setEvalBranchQuota(100_000); // due to std.math.pow
     var out: [256]f32 = undefined;
     @memset(&out, 0);
 
     for (0..256) |i| {
-        out[i] = decodeE4M3(@bitCast(i));
+        out[i] = decodeE4M3(@intCast(i));
     }
 
     return out;
@@ -116,6 +117,7 @@ test "e4m3_lut_values" {
     };
 
     for (0..256) |i| {
+        if (i == 0x7F or i == 0xFF) continue; // skip nan values
         try std.testing.expectEqual(ref[i], E4M3_LUT[i]);
     }
 }
