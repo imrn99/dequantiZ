@@ -43,6 +43,51 @@ const LayerMetaData = struct {
         q_p: TensorMetaData,
         v_p: TensorMetaData,
     },
+
+    fn buildLayerMD(
+        layer_id: u4,
+        allocator: std.mem.Allocator,
+        header: []const u8,
+    ) !@This() {
+        const key_input_layernorm_weight = try std.fmt.allocPrint(
+            allocator,
+            "layers.{}.input_layernorm.weight\"",
+            .{layer_id},
+        );
+        defer allocator.free(key_input_layernorm_weight);
+        const input_layernorm_weight_sub = try findJSONSubString(key_input_layernorm_weight, header);
+        const input_layernorm_weight: BlockMetaData(0) = try .parseFromSlice(
+            allocator,
+            header[input_layernorm_weight_sub.start..input_layernorm_weight_sub.end],
+        );
+
+        const key_att_layernorm_weight = try std.fmt.allocPrint(
+            allocator,
+            "layers.{}.post_attention_layernorm.weight\"",
+            .{layer_id},
+        );
+        defer allocator.free(key_att_layernorm_weight);
+        const att_layernorm_weight_sub = try findJSONSubString(key_att_layernorm_weight, header);
+        const att_layernorm_weight: BlockMetaData(0) = try .parseFromSlice(
+            allocator,
+            header[att_layernorm_weight_sub.start..att_layernorm_weight_sub.end],
+        );
+        return .{
+            .input_layernorm_weight = input_layernorm_weight,
+            .mlp = .{
+                .down_p = try .buildTensorMD(layer_id, "mlp.down_proj", allocator, header),
+                .gate_p = try .buildTensorMD(layer_id, "mlp.gate_proj", allocator, header),
+                .up_p = try .buildTensorMD(layer_id, "mlp.up_proj", allocator, header),
+            },
+            .post_att_layernorm_weight = att_layernorm_weight,
+            .att = .{
+                .k_p = try .buildTensorMD(layer_id, "self_attn.k_proj", allocator, header),
+                .o_p = try .buildTensorMD(layer_id, "self_attn.o_proj", allocator, header),
+                .q_p = try .buildTensorMD(layer_id, "self_attn.q_proj", allocator, header),
+                .v_p = try .buildTensorMD(layer_id, "self_attn.v_proj", allocator, header),
+            },
+        };
+    }
 };
 
 // tensor
@@ -218,6 +263,5 @@ test "tensor metadata deser" {
     // gibberish input, looking for "layers.9.mlp.down_proj.*"
     const in = "\"layers.8.self_attn.v_proj.input_scale\":{\"dtype\":\"F32\",\"shape\":[],\"data_offsets\":[832,836]},\"layers.8.self_attn.v_proj.weight_scale_2\":{\"dtype\":\"F32\",\"shape\":[],\"data_offsets\":[836,840]},\"layers.9.mlp.down_proj.input_scale\":{\"dtype\":\"F32\",\"shape\":[],\"data_offsets\":[840,844]},\"layers.9.mlp.down_proj.weight_scale_2\":{\"dtype\":\"F32\",\"shape\":[],\"data_offsets\":[844,848]},\"layers.9.mlp.gate_proj.input_scale\":{\"dtype\":\"F32\",\"shape\":[],\"data_offsets\":[848,852]},o_proj.weight\":{\"dtype\":\"U8\",\"shape\":[2048,1536],\"data_offsets\":[993137536,996283264]},\"layers.8.self_attn.q_proj.weight\":{\"dtype\":\"U8\",\"shape\":[3072,1024],\"data_offsets\":[996283264,999428992]},\"layers.8.self_attn.v_proj.weight\":{\"dtype\":\"U8\",\"shape\":[1024,1024],\"data_offsets\":[999428992,1000477568]},\"layers.9.mlp.down_proj.weight\":{\"dtype\":\"U8\",\"shape\":[2048,3072],\"data_offsets\":[1000477568,1006769024]},\"layers.9.mlp.gate_proj.weight\":{\"dtype\":\"U8\",\"shape\":[6144,1024],\"data_offsets\":[1006769024,1013060480]},\"layers.8.self_attn.v_proj.weight_scale\":{\"dtype\":\"F8_E4M3\",\"shape\":[1024,128],\"data_offsets\":[587993984,588125056]},\"layers.9.mlp.down_proj.weight_scale\":{\"dtype\":\"F8_E4M3\",\"shape\":[2048,384],\"data_offsets\":[588125056,588911488]},\"layers.9.mlp.gate_proj.weight_scale\":{\"dtype\":\"F8_E4M3\",\"shape\":[6144,128],\"data_offsets\":[588911488,589697920]},\"layers.9.mlp.up_proj.weight_scale\":{\"dtype\":\"F8_E4M3\",\"shape\":[6144,128],\"data_offsets\":[589697920,590484352]},\"layers.9.self_attn.k_proj.weight_scale\":{\"dtype\":\"F8_E4M3\",\"shape\":[1024,128],\"data_offsets\":[590484352,590615424]}";
     const parsed = try TensorMetaData.buildTensorMD(9, "mlp.down_proj", gpa, in);
-    // try std.testing.expect(parsed.weight.dtype == DType.fl8_e4m3);
-    _ = parsed;
+    try std.testing.expect(parsed.weight.dtype == DType.un8);
 }
