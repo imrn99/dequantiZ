@@ -18,3 +18,6 @@ curl -L -o model.safetensors https://huggingface.co/nvidia/Nemotron-3-Embed-1B-N
 - https://ziglang.org/documentation/master/#Vectors
   - syntax of all time I guess
   - https://www.openmymind.net/SIMD-With-Zig/
+- https://andrewkelley.me/post/zig-new-async-io-text-version.html
+  - can all multithreading be done through this API?
+  - are threads pinned to physical cores?

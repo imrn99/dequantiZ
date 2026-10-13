@@ -44,8 +44,9 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // dump stdout to file for verification
-    //var stdout_buffer: [1024]u8 = undefined;
-    //var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
-    //try stdout_file_writer.interface.print("{s}\n", .{header_blob[8..]});
-    //try stdout_file_writer.flush();
+    // var stdout_buffer: [1024]u8 = undefined;
+    // var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
+    // try stdout_file_writer.interface.print("{s}\n", .{header_blob[8..]});
+    // try stdout_file_writer.flush();
 }
+
