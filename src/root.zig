@@ -1,6 +1,7 @@
 //! By convention, root.zig is the root source file when making a package.
 const std = @import("std");
-const Io = std.Io;
 
-const decode = @import("decode.zig");
-const layer = @import("layer.zig");
+pub const decode = @import("decode.zig");
+pub const metadata = @import("metadata.zig");
+pub const tensor = @import("tensor.zig");
+

@@ -24,12 +24,20 @@ pub const DType = enum {
     }
 };
 
-// fn buildLayerMetaData(
-//     allocator: std.mem.Allocator,
-//     header: []const u8,
-// ) [16]u8 {}
+pub fn buildLayerMetaData(
+    allocator: std.mem.Allocator,
+    header: []const u8,
+) ![16]LayerMetaData {
+    var md: [16]LayerMetaData = undefined;
 
-const LayerMetaData = struct {
+    for (0..16) |i| {
+        md[i] = try LayerMetaData.buildLayerMD(@intCast(i), allocator, header);
+    }
+
+    return md;
+}
+
+pub const LayerMetaData = struct {
     input_layernorm_weight: BlockMetaData(1),
     mlp: struct {
         down_p: TensorMetaData,
@@ -56,7 +64,7 @@ const LayerMetaData = struct {
         );
         defer allocator.free(key_input_layernorm_weight);
         const input_layernorm_weight_sub = try findJSONSubString(key_input_layernorm_weight, header);
-        const input_layernorm_weight: BlockMetaData(0) = try .parseFromSlice(
+        const input_layernorm_weight: BlockMetaData(1) = try .parseFromSlice(
             allocator,
             header[input_layernorm_weight_sub.start..input_layernorm_weight_sub.end],
         );
@@ -68,7 +76,7 @@ const LayerMetaData = struct {
         );
         defer allocator.free(key_att_layernorm_weight);
         const att_layernorm_weight_sub = try findJSONSubString(key_att_layernorm_weight, header);
-        const att_layernorm_weight: BlockMetaData(0) = try .parseFromSlice(
+        const att_layernorm_weight: BlockMetaData(1) = try .parseFromSlice(
             allocator,
             header[att_layernorm_weight_sub.start..att_layernorm_weight_sub.end],
         );
@@ -92,9 +100,9 @@ const LayerMetaData = struct {
 
 // tensor
 
-const TensorInitError = error{ MissingKey, MalformedBlock };
+pub const TensorInitError = error{ MissingKey, MalformedBlock };
 
-const TensorMetaData = struct {
+pub const TensorMetaData = struct {
     input_scale: BlockMetaData(0),
     weight: BlockMetaData(2),
     group_scale: BlockMetaData(2),
@@ -190,7 +198,7 @@ pub fn BlockMetaData(DIM: comptime_int) type {
 
         // probably a bad interface, it takes an allocator but
         // the resulting struct doesn't require deinit call
-        pub fn parseFromSlice(
+        fn parseFromSlice(
             allocator: std.mem.Allocator,
             s: []const u8,
         ) !@This() {

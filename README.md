@@ -1,10 +1,14 @@
 ## todo
 
-- I/O bs
-- read header to fetch relevant metadata (layer data loc + size)
 - read + decode
   - exact method tbd, probably to change once all the steps are implemented correctly
 - write to target array
+
+## Notes
+
+- tensor binary blob is organized "homogeneously" rather than accordig to layer hierarchy
+  - something to consider for truly efficient deser, though it may change depending on models?
+- 
 
 ## Links
 ```
