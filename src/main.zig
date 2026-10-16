@@ -21,7 +21,19 @@ pub fn main(init: std.process.Init) !void {
 
     const md = try parseHeader(io, arena, &st_file);
     const layer_md = md[@intCast(LAYER_ID)];
-    _ = layer_md;
+
+    const buf = try dequantiZ.tensor.buildTensorData(
+        io,
+        arena,
+        &st_file,
+        N_THREADS,
+        layer_md.att.q_p,
+    );
+
+    for (buf.items[0..64]) |x| {
+        const tmp: u16 = @bitCast(x.toBits());
+        std.log.info("0x{x}", .{tmp});
+    }
 }
 
 // HEADER
@@ -69,4 +81,3 @@ fn parseHeader(
 
     return md;
 }
-
