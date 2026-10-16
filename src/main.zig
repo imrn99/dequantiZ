@@ -31,8 +31,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     for (buf.items[0..64]) |x| {
-        const tmp: u16 = @bitCast(x.toBits());
-        std.log.info("0x{x}", .{tmp});
+        std.log.info("0x{x}", .{x.toU16()});
     }
 }
 

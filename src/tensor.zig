@@ -5,45 +5,21 @@ const metadata = @import("metadata.zig");
 const decode = @import("decode.zig");
 
 pub const BFloat16 = struct {
-    sign: u1,
-    exponent: u8,
-    mantissa: u7,
+    bits: u16,
 
     // apparently this is platform dependent? for now, I'll truncate
     // https://en.wikipedia.org/wiki/Bfloat16_floating-point_format#Rounding_and_conversion
-    fn fromF32(in: f32) @This() {
-        const bits: [32]u1 = @bitCast(in);
+    pub fn fromF32(value: f32) @This() {
+        const f32_bits: u32 = @bitCast(value);
 
         return .{
-            .sign = bits[31],
-            .exponent = @bitCast(bits[23..31].*),
-            .mantissa = @bitCast(bits[16..23].*),
+            .bits = @truncate(f32_bits >> 16),
         };
     }
 
-    pub fn toBits(this: @This()) [16]u1 {
-        const e: [8]u1 = @bitCast(this.exponent);
-        const m: [7]u1 = @bitCast(this.mantissa);
-        return .{
-            this.sign,
-            e[7],
-            e[6],
-            e[5],
-            e[4],
-            e[3],
-            e[2],
-            e[1],
-            e[0],
-            m[6],
-            m[5],
-            m[4],
-            m[3],
-            m[2],
-            m[1],
-            m[0],
-        };
+    pub fn toU16(this: @This()) u16 {
+        return this.bits;
     }
-
 };
 
 const TensorBuildingError = error{ FailedGlobalScaleDeser, FailedWeightRead };
@@ -111,7 +87,7 @@ pub fn buildTensorData(
         const tp: *Io.Future(void) = @constCast(&h);
         tp.await(io);
     }
-    
+
     const end = std.Io.Clock.Timestamp.now(io, .real);
 
     const elapsed = now.durationTo(end);
@@ -226,5 +202,5 @@ fn readDecodeWrite(
     const end = std.Io.Clock.Timestamp.now(io, .real);
 
     const elapsed = now.durationTo(end);
-    std.log.info("time elapsed in thread #{}: {f}", .{thread_id, elapsed.raw});
+    std.log.info("time elapsed in thread #{}: {f}", .{ thread_id, elapsed.raw });
 }
