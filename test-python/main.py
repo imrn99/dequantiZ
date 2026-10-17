@@ -7,7 +7,7 @@ from safetensors import safe_open
 
 # Model and layer settings.
 SAFETENSORS_FILE = "../model.safetensors"
-LAYER_KEY = "layers.0.self_attn.q_proj.weight"
+LAYER_KEY = "layers.0.mlp.gate_proj.weight"
 
 # Execution settings.
 DEVICE = "cpu"  # "cpu", "cuda", "mps", or "auto" (prefers CUDA, then MPS)

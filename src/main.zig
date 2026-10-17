@@ -27,7 +27,7 @@ pub fn main(init: std.process.Init) !void {
         arena,
         &st_file,
         N_THREADS,
-        layer_md.att.q_p,
+        layer_md.mlp.gate_p,
     );
 
     for (buf.items[0..64]) |x| {
