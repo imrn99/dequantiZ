@@ -78,5 +78,6 @@ fn parseHeader(
 
     const md: [16]dequantiZ.metadata.LayerMetaData = try dequantiZ.metadata.buildLayerMetaData(allocator, header_blob);
 
+
     return md;
 }

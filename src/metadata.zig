@@ -64,10 +64,12 @@ pub const LayerMetaData = struct {
         );
         defer allocator.free(key_input_layernorm_weight);
         const input_layernorm_weight_sub = try findJSONSubString(key_input_layernorm_weight, header);
-        const input_layernorm_weight: BlockMetaData(1) = try .parseFromSlice(
+        var input_layernorm_weight: BlockMetaData(1) = try .parseFromSlice(
             allocator,
             header[input_layernorm_weight_sub.start..input_layernorm_weight_sub.end],
         );
+        input_layernorm_weight.offsets.start += header.len;
+        input_layernorm_weight.offsets.end += header.len;
 
         const key_att_layernorm_weight = try std.fmt.allocPrint(
             allocator,
@@ -76,10 +78,12 @@ pub const LayerMetaData = struct {
         );
         defer allocator.free(key_att_layernorm_weight);
         const att_layernorm_weight_sub = try findJSONSubString(key_att_layernorm_weight, header);
-        const att_layernorm_weight: BlockMetaData(1) = try .parseFromSlice(
+        var att_layernorm_weight: BlockMetaData(1) = try .parseFromSlice(
             allocator,
             header[att_layernorm_weight_sub.start..att_layernorm_weight_sub.end],
         );
+        att_layernorm_weight.offsets.start += header.len;
+        att_layernorm_weight.offsets.end += header.len;
         return .{
             .input_layernorm_weight = input_layernorm_weight,
             .mlp = .{
@@ -121,10 +125,12 @@ pub const TensorMetaData = struct {
         );
         defer allocator.free(key_input_scale);
         const input_scale_sub = try findJSONSubString(key_input_scale, header);
-        const input_scale: BlockMetaData(0) = try .parseFromSlice(
+        var input_scale: BlockMetaData(0) = try .parseFromSlice(
             allocator,
             header[input_scale_sub.start..input_scale_sub.end],
         );
+        input_scale.offsets.start += header.len;
+        input_scale.offsets.end += header.len;
 
         const key_weight = try std.fmt.allocPrint(
             allocator,
@@ -133,10 +139,12 @@ pub const TensorMetaData = struct {
         );
         defer allocator.free(key_weight);
         const weight_sub = try findJSONSubString(key_weight, header);
-        const weight: BlockMetaData(2) = try .parseFromSlice(
+        var weight: BlockMetaData(2) = try .parseFromSlice(
             allocator,
             header[weight_sub.start..weight_sub.end],
         );
+        weight.offsets.start += header.len;
+        weight.offsets.end += header.len;
 
         const key_group_scale = try std.fmt.allocPrint(
             allocator,
@@ -145,10 +153,12 @@ pub const TensorMetaData = struct {
         );
         defer allocator.free(key_group_scale);
         const group_scale_sub = try findJSONSubString(key_group_scale, header);
-        const group_scale: BlockMetaData(2) = try .parseFromSlice(
+        var group_scale: BlockMetaData(2) = try .parseFromSlice(
             allocator,
             header[group_scale_sub.start..group_scale_sub.end],
         );
+        group_scale.offsets.start += header.len;
+        group_scale.offsets.end += header.len;
 
         const key_global_scale = try std.fmt.allocPrint(
             allocator,
@@ -157,10 +167,12 @@ pub const TensorMetaData = struct {
         );
         defer allocator.free(key_global_scale);
         const global_scale_sub = try findJSONSubString(key_global_scale, header);
-        const global_scale: BlockMetaData(0) = try .parseFromSlice(
+        var global_scale: BlockMetaData(0) = try .parseFromSlice(
             allocator,
             header[global_scale_sub.start..global_scale_sub.end],
         );
+        global_scale.offsets.start += header.len;
+        global_scale.offsets.end += header.len;
 
         return .{
             .input_scale = input_scale,
