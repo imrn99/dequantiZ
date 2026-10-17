@@ -7,7 +7,7 @@ const TENSOR_FILE = "model.safetensors";
 
 // make this into CL arguments
 const LAYER_ID: u4 = 0;
-const N_THREADS: usize = 1;
+const N_THREADS: usize = 2;
 
 pub fn main(init: std.process.Init) !void {
     const arena: std.mem.Allocator = init.arena.allocator();

@@ -69,7 +69,7 @@ pub fn buildTensorData(
         // the best doc it has is from blog posts, explicit threading might be better atp
         const fut = try io.concurrent(readDecodeWrite, .{
             io,
-            // allocator,
+            allocator,
             st_file,
             i,
             block_size / 16,
@@ -97,7 +97,7 @@ pub fn buildTensorData(
 // 1st level: threads
 fn readDecodeWrite(
     io: Io,
-    // allocator: std.mem.Allocator,
+    allocator: std.mem.Allocator,
     st_file: *const Io.File,
     thread_id: usize,
     n_groups: usize,
@@ -112,38 +112,43 @@ fn readDecodeWrite(
     //      vs comptime-sized buffers in the inner loop
     //      removing file read from the hot loop may be the better plan
     //      it also will allow local storage of the input value, so likely better cache usage
-    const out_start = thread_id * n_groups * 16;
+    const weight_in: []u8 = allocator.alloc(u8, n_groups * 8) catch |e| {
+        std.log.err("could not allocate weight reading buffer in thread {}: {}", .{ thread_id, e });
+        return;
+    };
+    const nw = st_file.readPositionalAll(io, weight_in, weights_start) catch |e| {
+        std.log.err("{}", .{e});
+        return;
+    };
+    if (nw != n_groups * 8) {
+        std.log.err("could not read weight values", .{});
+        return;
+    }
+
+    const group_in: []u8 = allocator.alloc(u8, n_groups) catch |e| {
+        std.log.err("could not allocate weight reading buffer in thread {}: {}", .{ thread_id, e });
+        return;
+    };
+    const ng = st_file.readPositionalAll(io, group_in, group_scales_start) catch |e| {
+        std.log.err("{}", .{e});
+        return;
+    };
+    if (ng != n_groups) {
+        std.log.err("could not read group scale value", .{});
+        return;
+    }
 
     // 2nd level: groups
     // the code assume slice dimensions are correct
-    var weight_cursor = weights_start;
-    var group_cursor = group_scales_start;
-    for (0..n_groups) |i| {
-        // 8 * u8 = 16 * encoded fp4 E2M1
-        var weight_buf: [8]u8 = undefined;
-        const nw = st_file.readPositionalAll(io, &weight_buf, weight_cursor) catch |e| {
-            std.log.err("{}", .{e});
-            return;
-        };
-        if (nw != 8) {
-            std.log.err("could not read weight values", .{});
-            return;
-        }
+    const grouped_weights: [][8]u8 = std.mem.bytesAsSlice([8]u8, weight_in);
+    const out_start = thread_id * n_groups * 16;
 
-        // 1 u8 = 1 * fp8 E4M3
-        var group_buf: [1]u8 = undefined;
-        const ng = st_file.readPositionalAll(io, &group_buf, group_cursor) catch |e| {
-            std.log.err("{}", .{e});
-            return;
-        };
-        if (ng != 1) {
-            std.log.err("could not read group scale value", .{});
-            return;
-        }
-
+    // w: 8 * u8 = 16 * encoded fp4 E2M1
+    // g: 1 * u8 = 1 * fp8 E4M3
+    for (grouped_weights, group_in, 0..) |w, g, i| {
         // 3rd level: vectors
-        const encoded_weights: [16]u4 = @bitCast(weight_buf);
-        const decoded_gscale: f32 = decode.E4M3_LUT[@intCast(group_buf[0])];
+        const encoded_weights: [16]u4 = @bitCast(w);
+        const decoded_gscale: f32 = decode.E4M3_LUT[@intCast(g)];
 
         // NOTE: does a vectorized "map" exist? this does not feel right;
         //       the psychotic decoding solutions consisting in implemeting
@@ -192,9 +197,6 @@ fn readDecodeWrite(
         out[out_group_start + 13] = BFloat16.fromF32(decoded_weights[13]);
         out[out_group_start + 14] = BFloat16.fromF32(decoded_weights[14]);
         out[out_group_start + 15] = BFloat16.fromF32(decoded_weights[15]);
-
-        weight_cursor += 8;
-        group_cursor += 1;
     }
 
     const end = std.Io.Clock.Timestamp.now(io, .real);
