@@ -32,10 +32,9 @@ pub fn buildTensorData(
     st_file: *const Io.File,
     n_threads: usize,
     tensor_md: metadata.TensorMetaData,
-) !std.ArrayList(BFloat16) {
+) ![]BFloat16 {
     const n_elem = tensor_md.weight.shape[0] * tensor_md.weight.shape[1] * 2; // two elements per u8 value
-    var out: std.ArrayList(BFloat16) = .empty;
-    try out.resize(allocator, n_elem);
+    const out: []BFloat16 = try allocator.alloc(BFloat16, n_elem);
     var handles: std.ArrayList(Io.Future(void)) = try .initCapacity(allocator, n_threads);
     defer handles.deinit(allocator);
 
@@ -61,7 +60,6 @@ pub fn buildTensorData(
     // var n_groups_per_thread
     const block_size = n_elem / n_threads;
     // if (try std.math.rem(usize, block_size, 16) != 0) {}
-
     for (0..n_threads) |i| {
         const start = tensor_md.weight.offsets.start + i * block_size;
         // var n_elem_to_process = block_size;
@@ -78,7 +76,7 @@ pub fn buildTensorData(
             start,
             tensor_md.group_scale.offsets.start,
             global_scale,
-            out.items,
+            out,
         });
         try handles.append(allocator, fut);
     }

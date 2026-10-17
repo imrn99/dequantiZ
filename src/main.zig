@@ -29,8 +29,9 @@ pub fn main(init: std.process.Init) !void {
         N_THREADS,
         layer_md.mlp.gate_p,
     );
+    defer arena.free(buf);
 
-    for (buf.items[0..64]) |x| {
+    for (buf[0..64]) |x| {
         std.log.info("0x{x}", .{x.toU16()});
     }
 }
@@ -70,14 +71,7 @@ fn parseHeader(
         return HeaderParsingError.MalformedHeader;
     }
 
-    // dump stdout to file for verification
-    // var stdout_buffer: [1024]u8 = undefined;
-    // var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
-    // try stdout_file_writer.interface.print("{s}\n", .{header_blob[8..]});
-    // try stdout_file_writer.flush();
-
     const md: [16]dequantiZ.metadata.LayerMetaData = try dequantiZ.metadata.buildLayerMetaData(allocator, header_blob);
-
 
     return md;
 }

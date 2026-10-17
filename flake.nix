@@ -16,6 +16,7 @@
           nativeBuildInputs = with pkgs; [
             zig_0_17
             zls
+            samply
           ];
           buildInputs = with pkgs; [
             hwloc.dev # Provides hwloc library
