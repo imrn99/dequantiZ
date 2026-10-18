@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const outputExecutableName = "dequantiZ";
+
 // Although this function looks imperative, it does not perform the build
 // directly and instead it mutates the build graph (`b`) that will be then
 // executed by an external runner. The functions in `std.Build` implement a DSL
@@ -28,7 +30,7 @@ pub fn build(b: *std.Build) void {
     // to our consumers. We must give it a name because a Zig package can expose
     // multiple modules and consumers will need to be able to specify which
     // module they want to access.
-    const mod = b.addModule("dequantiZ", .{
+    const mod = b.addModule(outputExecutableName, .{
         // The root source file is the "entry point" of this module. Users of
         // this module will only be able to access public declarations contained
         // in this file, which means that if you have declarations that you
@@ -82,6 +84,9 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+
+    const installAssembly = b.addInstallBinFile(exe.getEmittedAsm(), outputExecutableName ++ ".s");
+    b.getInstallStep().dependOn(&installAssembly.step);
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
