@@ -150,23 +150,24 @@ fn readDecodeWrite(
         const encoded_weights: [16]u4 = @bitCast(w);
         const decoded_gscale: f32 = decode.E4M3_LUT[@intCast(g)];
 
-        var lut: @Vector(16, usize) = @splat(@intFromPtr(&decode.E2M1_LUT));
-        const offsets: @Vector(16, u4) = encoded_weights;
-        const indices: @Vector(16, usize) = @intCast(offsets);
-        lut += indices * @as(@Vector(16, usize), @splat(@sizeOf(f32)));
+        // var lut: @Vector(16, usize) = @splat(@intFromPtr(&decode.E2M1_LUT));
+        // const offsets: @Vector(16, u4) = encoded_weights;
+        // const indices: @Vector(16, usize) = @intCast(offsets);
+        // lut += indices * @as(@Vector(16, usize), @splat(@sizeOf(f32)));
 
         var decoded_weights: @Vector(16, f32) = undefined;
         inline for (0..16) |j| {
-            // decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
-            decoded_weights[j] = @as(*const f32, @ptrFromInt(lut[j])).*;
+            decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
+            // decoded_weights[j] = @as(*const f32, @ptrFromInt(lut[j])).*;
         }
         decoded_weights *= @splat(decoded_gscale);
         decoded_weights *= @splat(global_scale);
 
         // write result
+        const bf16_values: @Vector(16, u16) = @truncate(@as(@Vector(16, u32), @bitCast(decoded_weights)) >> @splat(16));
         const out_group_start = out_start + i * 16;
         inline for (0..16) |j| {
-            out[out_group_start + j] = BFloat16.fromF32(decoded_weights[j]);
+            out[out_group_start + j] = .{ .bits = bf16_values[j] };
         }
     }
 
