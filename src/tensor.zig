@@ -163,28 +163,11 @@ fn readDecodeWrite(
         decoded_weights *= @splat(decoded_gscale);
         decoded_weights *= @splat(global_scale);
 
-        // write result and increment cursors
+        // write result
         const out_group_start = out_start + i * 16;
-        // j not known at compile time lmao
-        // for (0..16) |j| {
-        //     out[out_group_start + j] = BFloat16.fromF32(decoded_weights[j]);
-        // }
-        out[out_group_start] = BFloat16.fromF32(decoded_weights[0]);
-        out[out_group_start + 1] = BFloat16.fromF32(decoded_weights[1]);
-        out[out_group_start + 2] = BFloat16.fromF32(decoded_weights[2]);
-        out[out_group_start + 3] = BFloat16.fromF32(decoded_weights[3]);
-        out[out_group_start + 4] = BFloat16.fromF32(decoded_weights[4]);
-        out[out_group_start + 5] = BFloat16.fromF32(decoded_weights[5]);
-        out[out_group_start + 6] = BFloat16.fromF32(decoded_weights[6]);
-        out[out_group_start + 7] = BFloat16.fromF32(decoded_weights[7]);
-        out[out_group_start + 8] = BFloat16.fromF32(decoded_weights[8]);
-        out[out_group_start + 9] = BFloat16.fromF32(decoded_weights[9]);
-        out[out_group_start + 10] = BFloat16.fromF32(decoded_weights[10]);
-        out[out_group_start + 11] = BFloat16.fromF32(decoded_weights[11]);
-        out[out_group_start + 12] = BFloat16.fromF32(decoded_weights[12]);
-        out[out_group_start + 13] = BFloat16.fromF32(decoded_weights[13]);
-        out[out_group_start + 14] = BFloat16.fromF32(decoded_weights[14]);
-        out[out_group_start + 15] = BFloat16.fromF32(decoded_weights[15]);
+        inline for (0..16) |j| {
+            out[out_group_start + j] = BFloat16.fromF32(decoded_weights[j]);
+        }
     }
 
     const end = std.Io.Clock.Timestamp.now(io, .real);
