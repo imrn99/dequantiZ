@@ -155,41 +155,11 @@ fn readDecodeWrite(
         const indices: @Vector(16, usize) = @intCast(offsets);
         lut += indices * @as(@Vector(16, usize), @splat(@sizeOf(f32)));
 
-        var decoded_weights: @Vector(16, f32) = .{
-            // decode.E2M1_LUT[@intCast(encoded_weights[0])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[1])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[2])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[3])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[4])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[5])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[6])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[7])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[8])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[9])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[10])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[11])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[12])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[13])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[14])],
-            // decode.E2M1_LUT[@intCast(encoded_weights[15])],
-            @as(*const f32, @ptrFromInt(lut[0])).*,
-            @as(*const f32, @ptrFromInt(lut[1])).*,
-            @as(*const f32, @ptrFromInt(lut[2])).*,
-            @as(*const f32, @ptrFromInt(lut[3])).*,
-            @as(*const f32, @ptrFromInt(lut[4])).*,
-            @as(*const f32, @ptrFromInt(lut[5])).*,
-            @as(*const f32, @ptrFromInt(lut[6])).*,
-            @as(*const f32, @ptrFromInt(lut[7])).*,
-            @as(*const f32, @ptrFromInt(lut[8])).*,
-            @as(*const f32, @ptrFromInt(lut[9])).*,
-            @as(*const f32, @ptrFromInt(lut[10])).*,
-            @as(*const f32, @ptrFromInt(lut[11])).*,
-            @as(*const f32, @ptrFromInt(lut[12])).*,
-            @as(*const f32, @ptrFromInt(lut[13])).*,
-            @as(*const f32, @ptrFromInt(lut[14])).*,
-            @as(*const f32, @ptrFromInt(lut[15])).*,
-        };
-
+        var decoded_weights: @Vector(16, f32) = undefined;
+        inline for (0..16) |j| {
+            // decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
+            decoded_weights[j] = @as(*const f32, @ptrFromInt(lut[j])).*;
+        }
         decoded_weights *= @splat(decoded_gscale);
         decoded_weights *= @splat(global_scale);
 
