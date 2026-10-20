@@ -19,7 +19,6 @@ fn buildLookupTableE2M1() [16]f32 {
 }
 
 fn buildLookupTableE4M3() [256]f32 {
-    @setEvalBranchQuota(100_000); // due to std.math.pow
     var out: [256]f32 = undefined;
     @memset(&out, 0);
 
@@ -37,10 +36,11 @@ pub fn decodeE2M1(in: u4) f32 {
     const m = bits[0];
 
     const non_zero_e: u1 = @bitCast(e != 0);
-    const exp = @max(e, 1);
-    // worst format tool award:
-    return std.math.pow(f32, -1.0, @as(f32, @floatFromInt(s))) *
-        std.math.pow(f32, 2.0, @as(f32, @floatFromInt(exp - 1))) *
+    const exp = @as(u32, @intCast(e)) + @as(u32, @intCast(~non_zero_e));
+    const sign: f32 = 1.0 - 2.0 * @as(f32, @floatFromInt(s));
+    const two_pow: f32 = @floatFromInt(1 << (exp - 1));
+
+    return sign * two_pow *
         (@as(f32, @floatFromInt(non_zero_e)) +
             @as(f32, @floatFromInt(m)) / 2.0);
 }
@@ -58,10 +58,11 @@ pub fn decodeE4M3(in: u8) f32 {
     }
 
     const non_zero_e: u1 = @bitCast(e != 0);
-    const exp: i8 = @intCast(@max(e, 1));
+    const exp: u32 = @intCast(@max(e, 1));
+    const sign: f32 = 1.0 - 2.0 * @as(f32, @floatFromInt(s));
+    const two_pow: f32 = @bitCast((exp + 120) << 23);
 
-    return std.math.pow(f32, -1.0, @as(f32, @floatFromInt(s))) *
-        std.math.pow(f32, 2.0, @as(f32, @floatFromInt(exp - 7))) *
+    return sign * two_pow *
         (@as(f32, @floatFromInt(non_zero_e)) +
             @as(f32, @floatFromInt(m)) / 8.0);
 }
