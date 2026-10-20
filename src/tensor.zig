@@ -89,7 +89,7 @@ pub fn buildTensorData(
     const end = std.Io.Clock.Timestamp.now(io, .real);
 
     const elapsed = now.durationTo(end);
-    std.log.info("time elapsed: {f}", .{elapsed.raw});
+    std.log.info("tensor data init time: {f}", .{elapsed.raw});
 
     return out;
 }
@@ -108,10 +108,6 @@ fn readDecodeWrite(
 ) void {
     const now = std.Io.Clock.Timestamp.now(io, .real);
 
-    //NOTE: tradeoff of reading all data in bufs from the start
-    //      vs comptime-sized buffers in the inner loop
-    //      removing file read from the hot loop may be the better plan
-    //      it also will allow local storage of the input value, so likely better cache usage
     const weight_in: []u8 = allocator.alloc(u8, n_groups * 8) catch |e| {
         std.log.err("could not allocate weight reading buffer in thread {}: {}", .{ thread_id, e });
         return;
@@ -124,7 +120,6 @@ fn readDecodeWrite(
         std.log.err("could not read weight values", .{});
         return;
     }
-
     const group_in: []u8 = allocator.alloc(u8, n_groups) catch |e| {
         std.log.err("could not allocate weight reading buffer in thread {}: {}", .{ thread_id, e });
         return;
@@ -137,6 +132,8 @@ fn readDecodeWrite(
         std.log.err("could not read group scale value", .{});
         return;
     }
+
+    const midpoint = std.Io.Clock.Timestamp.now(io, .real);
 
     // 2nd level: groups
     // the code assume slice dimensions are correct
@@ -164,7 +161,10 @@ fn readDecodeWrite(
         decoded_weights *= @splat(global_scale);
 
         // write result
-        const bf16_values: @Vector(16, u16) = @truncate(@as(@Vector(16, u32), @bitCast(decoded_weights)) >> @splat(16));
+        const bf16_values: @Vector(16, u16) = @truncate(@as(
+            @Vector(16, u32),
+            @bitCast(decoded_weights),
+        ) >> @splat(16));
         const out_group_start = out_start + i * 16;
         inline for (0..16) |j| {
             out[out_group_start + j] = .{ .bits = bf16_values[j] };
@@ -173,6 +173,10 @@ fn readDecodeWrite(
 
     const end = std.Io.Clock.Timestamp.now(io, .real);
 
-    const elapsed = now.durationTo(end);
-    std.log.info("time elapsed in thread #{}: {f}", .{ thread_id, elapsed.raw });
+    const elapsed = now.durationTo(midpoint);
+    const elapsed2 = midpoint.durationTo(end);
+    std.log.info(
+        "thread #{} alloc+read  : {f}\n                decode+write: {f}",
+        .{ thread_id, elapsed.raw, elapsed2.raw },
+    );
 }
