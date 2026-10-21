@@ -8,12 +8,12 @@ pub const E2M1_LUT = buildLookupTableE2M1();
 pub const E4M3_LUT = buildLookupTableE4M3();
 
 fn buildLookupTableE2M1() [16]f32 {
-    var out: [16]f32 = undefined;
-    @memset(&out, 0);
-
+    var in: [16]u4 = undefined;
     for (0..16) |i| {
-        out[i] = decodeE2M1(@intCast(i));
+        in[i] = i;
     }
+
+    const out: [16]f32 = decodeE2M1(in);
 
     return out;
 }
@@ -29,20 +29,20 @@ fn buildLookupTableE4M3() [256]f32 {
     return out;
 }
 
-pub fn decodeE2M1(in: u4) f32 {
-    const bits: [4]u1 = @bitCast(in);
-    const s = bits[3];
-    const e: u2 = @bitCast(bits[1..3].*);
-    const m = bits[0];
+pub fn decodeE2M1(arr_in: [16]u4) @Vector(16, f32) {
+    const in: @Vector(16, u4) = arr_in;
+    const s: @Vector(16, f32) = @floatFromInt(in >> @splat(3));
+    const e: @Vector(16, u5) = @intCast((in & @as(@Vector(16, u4), @splat(0b0110))) >> @splat(1));
+    const non_zero_e: @Vector(16, u1) = @intFromBool(e != @as(@Vector(16, u5), @splat(0)));
+    const m: @Vector(16, f32) = @floatFromInt(in & @as(@Vector(16, u4), @splat(0b0001)));
 
-    const non_zero_e: u1 = @bitCast(e != 0);
-    const exp = @as(u32, @intCast(e)) + @as(u32, @intCast(~non_zero_e));
-    const sign: f32 = 1.0 - 2.0 * @as(f32, @floatFromInt(s));
-    const two_pow: f32 = @floatFromInt(1 << (exp - 1));
+    const exp = e + @as(@Vector(16, u5), @intCast(~non_zero_e)); // max (e, 1)
+    const sign = @as(@Vector(16, f32), @splat(1.0)) - @as(@Vector(16, f32), @splat(2.0)) * s;
+    const two_pow: @Vector(16, f32) = @floatFromInt(@as(@Vector(16, u32), @splat(1)) << (exp - @as(@Vector(16, u5), @splat(1))));
 
     return sign * two_pow *
-        (@as(f32, @floatFromInt(non_zero_e)) +
-            @as(f32, @floatFromInt(m)) / 2.0);
+        (@as(@Vector(16, f32), @floatFromInt(non_zero_e)) +
+            m / @as(@Vector(16, f32), @splat(2.0)));
 }
 
 // I'm assuming the model uses the "finite" variant

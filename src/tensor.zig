@@ -67,6 +67,11 @@ pub fn buildTensorData(
         return TensorBuildingError.FailedWeightDeser;
     }
 
+    std.log.info(
+        "data file read time: {f}",
+        .{now.durationTo(std.Io.Clock.Timestamp.now(io, .real)).raw},
+    );
+
     // wrok split & dispatch
     // for now, assume everything has "nice" dimensions
     // may have to change if I execute this on a Grace bc of the bs number of procs
@@ -96,10 +101,10 @@ pub fn buildTensorData(
         tp.await(io);
     }
 
-    const end = std.Io.Clock.Timestamp.now(io, .real);
-
-    const elapsed = now.durationTo(end);
-    std.log.info("tensor data init time: {f}", .{elapsed.raw});
+    std.log.info(
+        "total tensor data init time: {f}",
+        .{now.durationTo(std.Io.Clock.Timestamp.now(io, .real)).raw},
+    );
 
     return out;
 }
@@ -129,6 +134,7 @@ fn readDecodeWrite(
         const encoded_weights: [16]u4 = @bitCast(grouped_weights_raw[i]);
         const decoded_gscale: f32 = decode.E4M3_LUT[@intCast(group_scales_raw[i])];
 
+        // var decoded_weights: @Vector(16, f32) = decode.decodeE2M1(encoded_weights);
         var decoded_weights: @Vector(16, f32) = undefined;
         inline for (0..16) |j| {
             decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
@@ -149,10 +155,8 @@ fn readDecodeWrite(
         }
     }
 
-    const end = std.Io.Clock.Timestamp.now(io, .real);
-    const elapsed = now.durationTo(end);
     std.log.info(
-        "thread #{} decode+write: {f}",
-        .{ thread_id, elapsed.raw },
+        "┗━thread #{} decode+write: {f}",
+        .{ thread_id, now.durationTo(std.Io.Clock.Timestamp.now(io, .real)).raw },
     );
 }
