@@ -122,6 +122,7 @@ fn readDecodeWrite(
     const now = std.Io.Clock.Timestamp.now(io, .real);
     // 2nd level: groups
     // the code assume slice dimensions are correct
+    // casting the slice below directly as [][16]u4 yields worse perf than this + bitcast later
     const grouped_weights_raw: []const [8]u8 = std.mem.bytesAsSlice([8]u8, weights_raw);
     const out_start = thread_id * n_groups * 16;
 

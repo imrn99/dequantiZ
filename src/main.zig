@@ -6,10 +6,38 @@ const dequantiZ = @import("dequantiZ");
 const TENSOR_FILE = "model.safetensors";
 
 // make this into CL arguments
-const LAYER_ID: u4 = 0;
-const N_THREADS: usize = 1;
 
 pub fn main(init: std.process.Init) !void {
+    var layer_id: u4 = 0;
+    var n_threads: usize = 1;
+    var args = init.minimal.args.iterate();
+    _ = args.next(); // discard "./zig-out/bin/dequantiz"
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--n-threads")) {
+            const raw = args.next() orelse {
+                std.log.err("Unspecified thread number", .{});
+                return;
+            };
+            n_threads = std.fmt.parseInt(usize, raw, 10) catch {
+                std.log.err("Could not parse thread number: {s}", .{raw});
+                return;
+            };
+        } else if (std.mem.eql(u8, arg, "--layer-id")) {
+            const raw = args.next() orelse {
+                std.log.err("Unspecified layer ID (expected usize in base 10)", .{});
+                return;
+            };
+            layer_id = std.fmt.parseInt(u4, raw, 10) catch {
+                std.log.err("Could not parse layer ID (expected u4 in base 10): {s}", .{raw});
+                return;
+            };
+        } else {
+            std.log.err("Unknown argument: {s}", .{arg});
+            return;
+        }
+    }
+
     const arena: std.mem.Allocator = init.arena.allocator();
     const io = init.io;
     const st_file = Io.Dir.cwd().openFile(io, TENSOR_FILE, .{}) catch |e|
@@ -20,13 +48,13 @@ pub fn main(init: std.process.Init) !void {
     defer st_file.close(io);
 
     const md = try parseHeader(io, arena, &st_file);
-    const layer_md = md[@intCast(LAYER_ID)];
+    const layer_md = md[@intCast(layer_id)];
 
     const buf = try dequantiZ.tensor.buildTensorData(
         io,
         arena,
         &st_file,
-        N_THREADS,
+        n_threads,
         layer_md.mlp.gate_p,
     );
     defer arena.free(buf);
