@@ -1,6 +1,7 @@
 # LLM-generated
 
 from pathlib import Path
+import argparse
 
 import torch
 from safetensors import safe_open
@@ -33,7 +34,67 @@ def select_device() -> torch.device:
     return torch.device(kind)
 
 
+def validate_layout(packed, scales, tensor_scale) -> None:
+    """Validate the flat, row-major NVFP4 layout used by this reference."""
+    if packed.dtype != torch.uint8 or packed.ndim != 2:
+        raise ValueError(
+            f"Expected packed [out, in/2] uint8, got {packed.dtype} {tuple(packed.shape)}"
+        )
+    rows, packed_cols = packed.shape
+    if packed_cols % 8:
+        raise ValueError("Packed last dimension must be divisible by 8 (16 FP4 weights/scale)")
+    expected_scales_shape = (rows, packed_cols // 8)
+    if tuple(scales.shape) != expected_scales_shape:
+        raise ValueError(
+            f"Expected flat row-major scales {expected_scales_shape}, got {tuple(scales.shape)}. "
+            "This may be a swizzled/padded layout requiring deswizzling."
+        )
+    if tensor_scale.numel() != 1:
+        raise ValueError("Expected a single global tensor scale")
+    if scales.dtype not in (torch.uint8, torch.float8_e4m3fn):
+        raise TypeError(f"Unsupported group-scale dtype: {scales.dtype}")
+
+
+def decode_chunk(packed, scales, tensor_scale, device="cpu"):
+    """Return FP4 values, FP32 block scales, and decoded FP32 for a row chunk."""
+    validate_layout(packed, scales, tensor_scale)
+    rows, packed_cols = packed.shape
+    # E2M1 codepoints from NVIDIA ModelOpt, independent of the Zig decoder.
+    # Low nibble corresponds to the earlier weight in each byte.
+    fp4_values = torch.tensor(
+        [0, 0.5, 1, 1.5, 2, 3, 4, 6, -0.0, -0.5, -1, -1.5, -2, -3, -4, -6],
+        dtype=torch.float32,
+        device=device,
+    )
+    packed_part = packed.to(device)
+    # Convert E4M3FN on CPU even where the selected GPU lacks FP8 support.
+    scales_part = scales.cpu().contiguous()
+    if scales_part.dtype == torch.uint8:
+        scales_part = scales_part.view(torch.float8_e4m3fn)
+    scales_fp32 = scales_part.to(torch.float32).to(device)
+    global_scale = tensor_scale.to(torch.float32).reshape(()).to(device)
+    codes = torch.empty((rows, packed_cols * 2), dtype=torch.uint8, device=device)
+    codes[:, 0::2] = packed_part & 0x0F
+    codes[:, 1::2] = packed_part >> 4
+    unscaled = fp4_values[codes.long()]
+    # Keep the two FP32 multiplications separate, in this order.
+    decoded_fp32 = (unscaled.reshape(rows, -1, 16) * scales_fp32.unsqueeze(-1)) * global_scale
+    return unscaled, scales_fp32, decoded_fp32.reshape(rows, packed_cols * 2)
+
+
+def truncate_bf16_bits(decoded_fp32):
+    """Return uint16 BF16 bits by discarding the low 16 FP32 bits, as Zig does."""
+    return ((decoded_fp32.contiguous().view(torch.int32) >> 16) & 0xFFFF).to(torch.uint16)
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Decode NVFP4 using the Python reference")
+    parser.add_argument("--input", default=SAFETENSORS_FILE)
+    parser.add_argument("--output", type=Path, default=Path("nvfp4_reference.bf16"))
+    parser.add_argument("--layer", default=LAYER_KEY)
+    parser.add_argument("--bf16-mode", choices=("round", "truncate"), default="round",
+                        help="round preserves the original behavior; truncate matches Zig")
+    args = parser.parse_args()
     if CPU_THREADS is not None:
         if CPU_THREADS < 1:
             raise ValueError("CPU_THREADS must be positive or None")
@@ -43,12 +104,12 @@ def main() -> None:
         raise ValueError("CHUNK_ROWS must be positive")
 
     device = select_device()
-    weight_key = LAYER_KEY if LAYER_KEY.endswith(".weight") else LAYER_KEY + ".weight"
+    weight_key = args.layer if args.layer.endswith(".weight") else args.layer + ".weight"
     prefix = weight_key[: -len(".weight")]
     scale_key = prefix + ".weight_scale"
     global_key = prefix + ".weight_scale_2"
 
-    with safe_open(SAFETENSORS_FILE, framework="pt", device="cpu") as f:
+    with safe_open(args.input, framework="pt", device="cpu") as f:
         keys = set(f.keys())
         missing = {weight_key, scale_key, global_key} - keys
         if missing:
@@ -67,41 +128,15 @@ def main() -> None:
         scales = f.get_tensor(scale_key)
         tensor_scale = f.get_tensor(global_key)
 
-    if packed.dtype != torch.uint8 or packed.ndim != 2:
-        raise ValueError(
-            f"Expected packed [out, in/2] uint8, got {packed.dtype} {tuple(packed.shape)}"
-        )
-
+    validate_layout(packed, scales, tensor_scale)
     rows, packed_cols = packed.shape
-    if packed_cols % 8:
-        raise ValueError(
-            "Packed last dimension must be divisible by 8 (16 FP4 weights/scale)"
-        )
-    expected_scales_shape = (rows, packed_cols // 8)
-    if tuple(scales.shape) != expected_scales_shape:
-        raise ValueError(
-            f"Expected flat row-major scales {expected_scales_shape}, got {tuple(scales.shape)}. "
-            "This may be a swizzled/padded layout requiring deswizzling."
-        )
-    if tensor_scale.numel() != 1:
-        raise ValueError("Expected a single global tensor scale")
-    if scales.dtype not in (torch.uint8, torch.float8_e4m3fn):
-        raise TypeError(f"Unsupported group-scale dtype: {scales.dtype}")
-
-    # E2M1 codepoints from NVIDIA ModelOpt (independent of the Zig decoder).
-    # Low nibble corresponds to the earlier weight in each byte.
-    fp4_values = torch.tensor(
-        [0, 0.5, 1, 1.5, 2, 3, 4, 6, -0.0, -0.5, -1, -1.5, -2, -3, -4, -6],
-        dtype=torch.float32,
-        device=device,
-    )
     global_scale_cpu = tensor_scale.to(torch.float32).reshape(())
-    global_scale = global_scale_cpu.to(device)
 
-    output_path = Path("nvfp4_reference.bf16")
+    output_path = args.output
     print(f"device:         {device}")
     print(f"CPU threads:    {torch.get_num_threads()}")
     print(f"chunk rows:     {CHUNK_ROWS}")
+    print(f"BF16 mode:      {args.bf16_mode}")
     print(f"weight key:     {weight_key}")
     print(f"packed shape:   {tuple(packed.shape)}")
     print(f"group shape:    {tuple(scales.shape)} ({scales.dtype})")
@@ -114,26 +149,13 @@ def main() -> None:
     with torch.inference_mode(), output_path.open("wb") as out_file:
         for start in range(0, rows, CHUNK_ROWS):
             end = min(start + CHUNK_ROWS, rows)
-            packed_part = packed[start:end].to(device)
-
-            # Convert E4M3FN to f32 on CPU: works even where GPU lacks FP8 support.
-            scales_part = scales[start:end].contiguous()
-            if scales_part.dtype == torch.uint8:
-                scales_part = scales_part.view(torch.float8_e4m3fn)
-            scales_fp32 = scales_part.to(torch.float32).to(device)
-
-            codes = torch.empty(
-                (end - start, packed_cols * 2), dtype=torch.uint8, device=device
+            unscaled, scales_fp32, decoded_fp32 = decode_chunk(
+                packed[start:end], scales[start:end], tensor_scale, device
             )
-            codes[:, 0::2] = packed_part & 0x0F
-            codes[:, 1::2] = packed_part >> 4
-            unscaled = fp4_values[codes.long()]
-
-            decoded_fp32 = (
-                unscaled.reshape(end - start, -1, 16) * scales_fp32.unsqueeze(-1)
-            ) * global_scale
-            decoded_fp32 = decoded_fp32.reshape(end - start, packed_cols * 2)
-            decoded_bf16 = decoded_fp32.to(torch.bfloat16)
+            if args.bf16_mode == "truncate":
+                decoded_bf16 = truncate_bf16_bits(decoded_fp32).view(torch.bfloat16)
+            else:
+                decoded_bf16 = decoded_fp32.to(torch.bfloat16)
 
             # Stage each chunk to CPU to write exactly 2 bytes per BF16 value.
             bits = decoded_bf16.cpu().contiguous().view(torch.int16)
