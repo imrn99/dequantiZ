@@ -17,6 +17,7 @@
             zig_0_17
             zls
             samply
+            uv
           ];
           buildInputs = with pkgs; [
             hwloc.dev # Provides hwloc library
