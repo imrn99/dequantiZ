@@ -4,3 +4,4 @@
 *.json.gz
 *.safetensors
 *.bf16
+__pycache__/
