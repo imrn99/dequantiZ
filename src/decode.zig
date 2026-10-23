@@ -7,8 +7,11 @@ const std = @import("std");
 pub const E2M1_LUT = buildLookupTableE2M1();
 pub const E4M3_LUT = buildLookupTableE4M3();
 
+const V16u8 = @Vector(16, u8);
+const V16u32 = @Vector(16, u32);
+
 fn buildLookupTableE2M1() [16]f32 {
-    var in: [16]u4 = undefined;
+    var in: V16u8 = undefined;
     for (0..16) |i| {
         in[i] = i;
     }
@@ -29,20 +32,20 @@ fn buildLookupTableE4M3() [256]f32 {
     return out;
 }
 
-pub fn decodeE2M1(arr_in: [16]u4) @Vector(16, f32) {
-    const in: @Vector(16, u4) = arr_in;
-    const s: @Vector(16, f32) = @floatFromInt(in >> @splat(3));
-    const e: @Vector(16, u5) = @intCast((in & @as(@Vector(16, u4), @splat(0b0110))) >> @splat(1));
-    const non_zero_e: @Vector(16, u1) = @intFromBool(e != @as(@Vector(16, u5), @splat(0)));
-    const m: @Vector(16, f32) = @floatFromInt(in & @as(@Vector(16, u4), @splat(0b0001)));
+pub fn decodeE2M1(in: V16u8) @Vector(16, f32) {
+    const s: V16u32 = @as(V16u32, @intCast(in & @as(V16u8, @splat(0b00001000)))) << @splat(28);
+    const e: V16u32 = @as(V16u32, @intCast((in & @as(V16u8, @splat(0b00000110))))) << @splat(22);
+    const m: V16u32 = @as(V16u32, @intCast((in & @as(V16u8, @splat(0b00000001))))) << @splat(22);
 
-    const exp = e + @as(@Vector(16, u5), @intCast(~non_zero_e)); // max (e, 1)
-    const sign = @as(@Vector(16, f32), @splat(1.0)) - @as(@Vector(16, f32), @splat(2.0)) * s;
-    const two_pow: @Vector(16, f32) = @floatFromInt(@as(@Vector(16, u32), @splat(1)) << (exp - @as(@Vector(16, u5), @splat(1))));
+    // the way subnormal conversion works is:
+    // if e_nvfp4 (2bits) == 0 => e_f32 (8bits) = 0
+    //                    else => e_f32 (8bits) = 126 + e_nvfp4
+    const cst: V16u32 = @splat(126 << 23);
+    const non_zero_e: V16u32 = @intFromBool(e != @as(V16u32, @splat(0)));
+    const non_zero_m: V16u32 = @intFromBool(m != @as(V16u32, @splat(0)));
+    const adjusted_e: V16u32 = (non_zero_e | non_zero_m) * (cst + e);
 
-    return sign * two_pow *
-        (@as(@Vector(16, f32), @floatFromInt(non_zero_e)) +
-            m / @as(@Vector(16, f32), @splat(2.0)));
+    return @bitCast(s | adjusted_e | (non_zero_e * non_zero_m * m));
 }
 
 // I'm assuming the model uses the "finite" variant
