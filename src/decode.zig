@@ -33,19 +33,20 @@ fn buildLookupTableE4M3() [256]f32 {
 }
 
 pub fn decodeE2M1(in: V16u8) @Vector(16, f32) {
-    const s: V16u32 = @as(V16u32, @intCast(in & @as(V16u8, @splat(0b00001000)))) << @splat(28);
-    const e: V16u32 = @as(V16u32, @intCast((in & @as(V16u8, @splat(0b00000110))))) << @splat(22);
-    const m: V16u32 = @as(V16u32, @intCast((in & @as(V16u8, @splat(0b00000001))))) << @splat(22);
+    const s: V16u8 = in & @as(V16u8, @splat(0b00001000));
+    const e: V16u8 = (in & @as(V16u8, @splat(0b00000110))) >> @splat(1);
+    const m: V16u8 = in & @as(V16u8, @splat(0b00000001));
 
     // the way subnormal conversion works is:
     // if e_nvfp4 (2bits) == 0 => e_f32 (8bits) = 0
     //                    else => e_f32 (8bits) = 126 + e_nvfp4
-    const cst: V16u32 = @splat(126 << 23);
-    const non_zero_e: V16u32 = @intFromBool(e != @as(V16u32, @splat(0)));
-    const non_zero_m: V16u32 = @intFromBool(m != @as(V16u32, @splat(0)));
-    const adjusted_e: V16u32 = (non_zero_e | non_zero_m) * (cst + e);
+    const non_zero_e: V16u8 = @intFromBool(e != @as(V16u8, @splat(0)));
+    const non_zero_m: V16u8 = @intFromBool(m != @as(V16u8, @splat(0)));
+    const adjusted_e: V16u8 = (non_zero_e | non_zero_m) * (e + @as(V16u8, @splat(126)));
 
-    return @bitCast(s | adjusted_e | (non_zero_e * non_zero_m * m));
+    return @bitCast((@as(V16u32, @intCast(s)) << @splat(28)) |
+        (@as(V16u32, @intCast(adjusted_e)) << @splat(23)) |
+        (@as(V16u32, @intCast(non_zero_e * m)) << @splat(22)));
 }
 
 // I'm assuming the model uses the "finite" variant

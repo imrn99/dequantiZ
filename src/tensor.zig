@@ -136,24 +136,24 @@ fn readDecodeWrite(
 
         // LUT-based decode
 
-        const encoded_weights: @Vector(16, u4) = @bitCast(grouped_weights_raw[i]);
-        var decoded_weights: @Vector(16, f32) = undefined;
-        inline for (0..16) |j| {
-            decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
-        }
+        // const encoded_weights: @Vector(16, u4) = @bitCast(grouped_weights_raw[i]);
+        // var decoded_weights: @Vector(16, f32) = undefined;
+        // inline for (0..16) |j| {
+        //     decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
+        // }
 
-        // bit manipulation decode
+        // bit manipulation decode -- slower
         
-        // const encoded_weights: @Vector(8, u8) = @bitCast(grouped_weights_raw[i]);
-        // const hi = encoded_weights >> @splat(4);
-        // const lo = encoded_weights & @as(@Vector(8, u8), @splat(0b00001111));
-        // const encoded_weights_extended: @Vector(16, u8) = @shuffle(
-        //     u8,
-        //     hi,
-        //     lo,
-        //    @Vector(16, i32){ 0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7, -8},
-        // );
-        // var decoded_weights: @Vector(16, f32) = decode.decodeExtendedE2M1(encoded_weights_extended);
+        const encoded_weights: @Vector(8, u8) = @bitCast(grouped_weights_raw[i]);
+        const hi = encoded_weights >> @splat(4);
+        const lo = encoded_weights & @as(@Vector(8, u8), @splat(0b00001111));
+        const encoded_weights_extended: @Vector(16, u8) = @shuffle(
+            u8,
+            hi,
+            lo,
+           @Vector(16, i32){ 0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7, -8},
+        );
+        var decoded_weights: @Vector(16, f32) = decode.decodeE2M1(encoded_weights_extended);
 
         const decoded_gscale: f32 = decode.E4M3_LUT[@intCast(group_scales_raw[i])];
         decoded_weights *= @splat(decoded_gscale);
