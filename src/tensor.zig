@@ -28,6 +28,7 @@ pub fn buildTensorData(
     const n_elem = tensor_md.weight.shape[0] * tensor_md.weight.shape[1] * 2; // two elements per u8 value
     const n_groups = n_elem / 16;
     const out: []BFloat16 = try allocator.alloc(BFloat16, n_elem);
+    @memset(out, .{ .bits = 0}); // !
 
     // GLOBAL SCALE
 
@@ -182,7 +183,9 @@ fn readDecodeWrite(
         //         replacing the write code above with a memset yields the same timing
         //       - threading scales poorly in both situation, but that could very well
         //         be due to (lack of) pinning, and P/E core action
-        //       - the pure write takes ~66% of the time of the full regular routine
+        //       - the pure write takes ~66% of the time of the full regular routine on
+        //         Intel CPU, on M1 Pro, the time is the same, so I'm guessing it is fully
+        //         memory-bound
         // @memset(out[out_group_start..out_group_start + 16], .{ .bits = 166} );
     }
 
