@@ -84,6 +84,7 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    exe.use_llvm = true; // required for asm in debug mode
 
     const installAssembly = b.addInstallBinFile(exe.getEmittedAsm(), outputExecutableName ++ ".s");
     b.getInstallStep().dependOn(&installAssembly.step);
