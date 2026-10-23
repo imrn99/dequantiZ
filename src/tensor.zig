@@ -125,6 +125,9 @@ fn readDecodeWrite(
     // casting the slice below directly as [][16]u4 yields worse perf than this + bitcast later
     const grouped_weights_raw: []const [8]u8 = std.mem.bytesAsSlice([8]u8, weights_raw);
     const out_start = thread_id * n_groups * 16;
+    // _ = weights_raw;
+    // _ = group_scales_raw;
+    // _ = global_scale;
 
     // w: 8 * u8 = 16 * encoded fp4 E2M1
     // g: 1 * u8 = 1 * fp8 E4M3
@@ -132,34 +135,38 @@ fn readDecodeWrite(
         // 3rd level: vectors
         // from zig's doc, I'm assuming processing the entire thing
         // in a single 16-wide vec compiles to the most optimal work split
-        // update: it doesnt, the LUT accesses end up as scalars loads
+        // NOTE: - LUT impl result in scalar loads, but still outperforms the vectorized decode
+        //       - overhead of the direct bit manipulation decode seems to come mostly from the
+        //         extension to u8; similar overhead appears when using manually unpacked u8
+        //         with LUT lookup
 
         // LUT-based decode
 
-        // const encoded_weights: @Vector(16, u4) = @bitCast(grouped_weights_raw[i]);
-        // var decoded_weights: @Vector(16, f32) = undefined;
-        // inline for (0..16) |j| {
-        //     decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
-        // }
+        const encoded_weights: @Vector(16, u4) = @bitCast(grouped_weights_raw[i]);
+        var decoded_weights: @Vector(16, f32) = undefined;
+        inline for (0..16) |j| {
+            decoded_weights[j] = decode.E2M1_LUT[@intCast(encoded_weights[j])];
+        }
 
         // bit manipulation decode -- slower
         
-        const encoded_weights: @Vector(8, u8) = @bitCast(grouped_weights_raw[i]);
-        const hi = encoded_weights >> @splat(4);
-        const lo = encoded_weights & @as(@Vector(8, u8), @splat(0b00001111));
-        const encoded_weights_extended: @Vector(16, u8) = @shuffle(
-            u8,
-            hi,
-            lo,
-           @Vector(16, i32){ 0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7, -8},
-        );
-        var decoded_weights: @Vector(16, f32) = decode.decodeE2M1(encoded_weights_extended);
+        // const encoded_weights: @Vector(8, u8) = @bitCast(grouped_weights_raw[i]);
+        // const hi = encoded_weights >> @splat(4);
+        // const lo = encoded_weights & @as(@Vector(8, u8), @splat(0b00001111));
+        // const encoded_weights_extended: @Vector(16, u8) = @shuffle(
+        //     u8,
+        //     hi,
+        //     lo,
+        //    @Vector(16, i32){ 0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7, -8},
+        // );
+        // var decoded_weights: @Vector(16, f32) = decode.decodeE2M1(encoded_weights_extended);
 
+        // apply scales and write
+        
         const decoded_gscale: f32 = decode.E4M3_LUT[@intCast(group_scales_raw[i])];
         decoded_weights *= @splat(decoded_gscale);
         decoded_weights *= @splat(global_scale);
 
-        // write result
         // apparently f32 -> bf16 is platform dependent? for now, I'll truncate
         // https://en.wikipedia.org/wiki/Bfloat16_floating-point_format#Rounding_and_conversion
         const bf16_values: @Vector(16, u16) = @truncate(@as(
@@ -170,6 +177,13 @@ fn readDecodeWrite(
         inline for (0..16) |j| {
             out[out_group_start + j] = .{ .bits = bf16_values[j] };
         }
+
+        // NOTE: - commenting out the decoding logic gives pure write throughput,
+        //         replacing the write code above with a memset yields the same timing
+        //       - threading scales poorly in both situation, but that could very well
+        //         be due to (lack of) pinning, and P/E core action
+        //       - the pure write takes ~66% of the time of the full regular routine
+        // @memset(out[out_group_start..out_group_start + 16], .{ .bits = 166} );
     }
 
     std.log.info(

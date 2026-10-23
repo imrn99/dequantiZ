@@ -1,16 +1,9 @@
 ## TODO
 
-- test buffer alloc outside of threads + operating on slices
-  - likely better for small scale, worse for large
-- test threading larger data volumes
-  - generate dummy data
-- impl and test vectorized decoding functions to replce LUTs
-
-## Notes
-
-- tensor binary blob is organized "homogeneously" rather than accordig to layer hierarchy
-  - something to consider for truly efficient deser, though it may change depending on models?
-- 
+- figure out how to pin threads in Zig
+  - making it work OOB on MacOS + Linux might be hell
+- test single output buffer vs sharded buffer per thread
+- check ASM + throughput again on M1 Pro
 
 ## Tensor file
 
@@ -31,7 +24,7 @@ Both alternatives write/replace `model.safetensors`, the benchmark's hardcoded i
 Run the benchmark with either file:
 
 ```bash
-zig build run -Doptimize=ReleaseFast
+zig build run --release=fast -- --n-threads 1
 ```
 See [the Python documentation](test-python/README.md)
 for the exact tensor format, reference output, offline use, and tests.
