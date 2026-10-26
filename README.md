@@ -1,9 +1,7 @@
 ## TODO
 
-- figure out how to pin threads in Zig
-  - making it work OOB on MacOS + Linux might be hell
+- skip thread pinning on MacOS
 - test single output buffer vs sharded buffer per thread
-- check ASM + throughput again on M1 Pro
 
 ## Tensor file
 

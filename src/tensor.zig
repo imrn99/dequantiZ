@@ -1,4 +1,5 @@
 const std = @import("std");
+const linux = std.os.linux;
 const Io = std.Io;
 
 const metadata = @import("metadata.zig");
@@ -23,6 +24,7 @@ pub fn buildTensorData(
     n_threads: usize,
     tensor_md: metadata.TensorMetaData,
 ) ![]BFloat16 {
+    // try pinCurrentThread(0);
     const now = std.Io.Clock.Timestamp.now(io, .real);
 
     const n_elem = tensor_md.weight.shape[0] * tensor_md.weight.shape[1] * 2; // two elements per u8 value
@@ -120,12 +122,19 @@ fn readDecodeWrite(
     global_scale: f32,
     out: []BFloat16,
 ) void {
+    // printAffinity();
+    pinCurrentThread(thread_id) catch |e| {
+        std.log.err("couldn't set affinity: {}", .{e});
+    };
+    // printAffinity();
+    const out_start = thread_id * n_groups * 16;
+    // @memset(out[out_start..out_start + n_groups * 16], .{ .bits = 0 });
+
     const now = std.Io.Clock.Timestamp.now(io, .real);
     // 2nd level: groups
     // the code assume slice dimensions are correct
     // casting the slice below directly as [][16]u4 yields worse perf than this + bitcast later
     const grouped_weights_raw: []const [8]u8 = std.mem.bytesAsSlice([8]u8, weights_raw);
-    const out_start = thread_id * n_groups * 16;
     // _ = weights_raw;
     // _ = group_scales_raw;
     // _ = global_scale;
@@ -150,7 +159,7 @@ fn readDecodeWrite(
         }
 
         // bit manipulation decode -- slower
-        
+
         // const encoded_weights: @Vector(8, u8) = @bitCast(grouped_weights_raw[i]);
         // const hi = encoded_weights >> @splat(4);
         // const lo = encoded_weights & @as(@Vector(8, u8), @splat(0b00001111));
@@ -163,13 +172,14 @@ fn readDecodeWrite(
         // var decoded_weights: @Vector(16, f32) = decode.decodeE2M1(encoded_weights_extended);
 
         // apply scales and write
-        
+
         const decoded_gscale: f32 = decode.E4M3_LUT[@intCast(group_scales_raw[i])];
         decoded_weights *= @splat(decoded_gscale);
         decoded_weights *= @splat(global_scale);
 
         // apparently f32 -> bf16 is platform dependent? for now, I'll truncate
         // https://en.wikipedia.org/wiki/Bfloat16_floating-point_format#Rounding_and_conversion
+        // NOTE: rounding and truncating have significantly different costs
         const bf16_values: @Vector(16, u16) = @truncate(@as(
             @Vector(16, u32),
             @bitCast(decoded_weights),
@@ -181,11 +191,11 @@ fn readDecodeWrite(
 
         // NOTE: - commenting out the decoding logic gives pure write throughput,
         //         replacing the write code above with a memset yields the same timing
-        //       - threading scales poorly in both situation, but that could very well
-        //         be due to (lack of) pinning, and P/E core action
-        //       - the pure write takes ~66% of the time of the full regular routine on
-        //         Intel CPU, on M1 Pro, the time is the same, so I'm guessing it is fully
-        //         memory-bound
+        //       - threading scales poorly in both situation on the Intel CPU, but that could
+        //         very well be due to (lack of) pinning, and P/E core action
+        //       - the pure write takes
+        //         - ~66% of the time of the full regular routine on Intel CPU,
+        //         - the same time on M1 Pro
         // @memset(out[out_group_start..out_group_start + 16], .{ .bits = 166} );
     }
 
@@ -193,4 +203,30 @@ fn readDecodeWrite(
         "┗━thread #{} decode+write: {f}",
         .{ thread_id, now.durationTo(std.Io.Clock.Timestamp.now(io, .real)).raw },
     );
+}
+
+fn pinCurrentThread(core_id: usize) !void {
+    var mask: linux.cpu_set_t = undefined;
+    @memset(&mask, 0);
+
+    // arithmetic is necessary to handle IDs >64
+    if (core_id >= @bitSizeOf(linux.cpu_set_t))
+        return error.InvalidCoreID;
+
+    const word_bits = @bitSizeOf(usize);
+    mask[core_id / word_bits] = @as(usize, 1) << @intCast(core_id % word_bits);
+
+    try linux.sched_setaffinity(0, &mask);
+}
+
+fn printAffinity() void {
+    const aff = std.posix.sched_getaffinity(0) catch |e| {
+        std.log.err("couldn't fetch current process affinity: {}", .{e});
+        return;
+    };
+    std.log.info("affinity: 0b{b}", .{aff[0]});
+    // comment above line & uncomment the for loop for machines with >64 logic cores
+    // for (aff) |a| {
+    //     std.log.info("affinity: 0b{b}", .{a});
+    // }
 }
