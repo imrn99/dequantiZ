@@ -30,8 +30,8 @@ pub fn buildTensorData(
 
     const n_elem = tensor_md.weight.shape[0] * tensor_md.weight.shape[1] * 2; // two elements per u8 value
     const n_groups = n_elem / 16;
-    const out: []BFloat16 = try allocator.alloc(BFloat16, n_elem);
-    @memset(out, .{ .bits = 0}); // !
+    const out: []align(32) BFloat16 = try allocator.alignedAlloc(BFloat16, std.mem.Alignment.@"32", n_elem);
+    // @memset(out, .{ .bits = 0 }); // !
 
     // GLOBAL SCALE
 
@@ -121,7 +121,7 @@ fn readDecodeWrite(
     weights_raw: []const u8,
     group_scales_raw: []const u8,
     global_scale: f32,
-    out: []BFloat16,
+    out: []align(32) BFloat16,
 ) void {
     // printAffinity();
     pinCurrentThread(thread_id) catch |e| {
@@ -129,7 +129,7 @@ fn readDecodeWrite(
     };
     // printAffinity();
     const out_start = thread_id * n_groups * 16;
-    // @memset(out[out_start..out_start + n_groups * 16], .{ .bits = 0 });
+    @memset(out[out_start..out_start + n_groups * 16], .{ .bits = 0 });
 
     const now = std.Io.Clock.Timestamp.now(io, .real);
     // 2nd level: groups
@@ -186,9 +186,8 @@ fn readDecodeWrite(
             @bitCast(decoded_weights),
         ) >> @splat(16));
         const out_group_start = out_start + i * 16;
-        inline for (0..16) |j| {
-            out[out_group_start + j] = .{ .bits = bf16_values[j] };
-        }
+
+        writePayload(@ptrCast(@alignCast(out[out_group_start .. out_group_start + 16])), bf16_values);
 
         // NOTE: - commenting out the decoding logic gives pure write throughput,
         //         replacing the write code above with a memset yields the same timing
@@ -206,10 +205,34 @@ fn readDecodeWrite(
     );
 }
 
+inline fn writePayload(
+    dst: *align(32) @Vector(16, u16),
+    value: @Vector(16, u16),
+) void {
+    if (builtin.cpu.arch == std.Target.Cpu.Arch.x86_64 and
+        std.Target.x86.featureSetHas(builtin.cpu.features, std.Target.x86.Feature.avx))
+    {
+        asm volatile (
+            \\vmovntdq %[value], (%[dst])
+            :
+            : [value] "x" (value),
+              [dst] "r" (dst),
+            : .{ .memory = true });
+    } else if (builtin.cpu.arch == std.Target.Cpu.Arch.aarch64 and
+        std.Target.x86.featureSetHas(builtin.cpu.features, std.Target.aarch64.Feature.neon))
+    {
+        // TODO: impl ARM inline asm; STNP instr?
+        // https://www.scs.stanford.edu/~zyedidia/arm64/stnp_fpsimd.html
+        return;
+    } else {
+        dst.* = value;
+    }
+}
+
 fn pinCurrentThread(core_id: usize) !void {
     comptime if (builtin.target.os.tag != std.Target.Os.Tag.linux) {
         return error.UnsupportedOS;
-    }; 
+    };
 
     var mask: linux.cpu_set_t = undefined;
     @memset(&mask, 0);
