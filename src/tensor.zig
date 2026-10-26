@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const linux = std.os.linux;
 const Io = std.Io;
 
@@ -206,6 +207,10 @@ fn readDecodeWrite(
 }
 
 fn pinCurrentThread(core_id: usize) !void {
+    comptime if (builtin.target.os.tag != std.Target.Os.Tag.linux) {
+        return error.UnsupportedOS;
+    }; 
+
     var mask: linux.cpu_set_t = undefined;
     @memset(&mask, 0);
 

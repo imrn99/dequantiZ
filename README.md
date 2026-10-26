@@ -1,6 +1,5 @@
 ## TODO
 
-- skip thread pinning on MacOS
 - test single output buffer vs sharded buffer per thread
 
 ## Tensor file

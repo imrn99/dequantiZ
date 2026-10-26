@@ -5,8 +5,6 @@ const dequantiZ = @import("dequantiZ");
 
 const TENSOR_FILE = "model.safetensors";
 
-// make this into CL arguments
-
 pub fn main(init: std.process.Init) !void {
     var layer_id: u4 = 0;
     var n_threads: usize = 1;
@@ -58,6 +56,10 @@ pub fn main(init: std.process.Init) !void {
         layer_md.mlp.gate_p,
     );
     defer arena.free(buf);
+
+    // for (0..16) |i| {
+    //     std.log.info("buf[{}]: 0x{x}", .{i, buf[i].toU16()});
+    // }
 }
 
 // HEADER
