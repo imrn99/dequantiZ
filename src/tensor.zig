@@ -102,8 +102,8 @@ pub fn buildTensorData(
             io,
             i,
             n_groups_per_thread,
-            weight_in,
-            group_in,
+            weight_in[i * n_groups_per_thread * 8 .. (i + 1) * n_groups_per_thread * 8],
+            group_in[i * n_groups_per_thread .. (i + 1) * n_groups_per_thread],
             global_scale,
             shard,
         });
@@ -117,7 +117,7 @@ pub fn buildTensorData(
     }
 
     for (out_shards.items, 0..) |s, i| {
-        @memcpy(out[i * s.len ..(i+1) * s.len ], s);
+        @memcpy(out[i * s.len .. (i + 1) * s.len], s);
         allocator.free(s);
     }
 
