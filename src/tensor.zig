@@ -30,7 +30,11 @@ pub fn buildTensorData(
 
     const n_elem = tensor_md.weight.shape[0] * tensor_md.weight.shape[1] * 2; // two elements per u8 value
     const n_groups = n_elem / 16;
-    const out: []align(32) BFloat16 = try allocator.alignedAlloc(BFloat16, std.mem.Alignment.@"32", n_elem);
+    const out: []align(32) BFloat16 = try allocator.alignedAlloc(
+        BFloat16,
+        std.mem.Alignment.@"32",
+        n_elem,
+    );
     // @memset(out, .{ .bits = 0 }); // !
 
     // GLOBAL SCALE
@@ -80,6 +84,7 @@ pub fn buildTensorData(
     // for now, assume everything has "nice" dimensions
     // may have to change if I execute this on a Grace bc of the bs number of procs
 
+    var out_shards: std.ArrayList([]BFloat16) = try .initCapacity(allocator, n_threads);
     var handles: std.ArrayList(Io.Future(void)) = try .initCapacity(allocator, n_threads);
     defer handles.deinit(allocator);
 
@@ -88,6 +93,11 @@ pub fn buildTensorData(
     for (0..n_threads) |i| {
         // io.async could be sufficient here? io API is extremely unclear
         // the best doc it has is from blog posts, explicit threading might be better atp
+        const shard: []align(32) BFloat16 = try allocator.alignedAlloc(
+            BFloat16,
+            std.mem.Alignment.@"32",
+            n_groups_per_thread * 16,
+        );
         const fut = try io.concurrent(readDecodeWrite, .{
             io,
             i,
@@ -95,14 +105,20 @@ pub fn buildTensorData(
             weight_in,
             group_in,
             global_scale,
-            out,
+            shard,
         });
+        try out_shards.append(allocator, shard);
         try handles.append(allocator, fut);
     }
 
     for (handles.items) |h| {
         const tp: *Io.Future(void) = @constCast(&h);
         tp.await(io);
+    }
+
+    for (out_shards.items, 0..) |s, i| {
+        @memcpy(out[i * s.len ..], s);
+        allocator.free(s);
     }
 
     std.log.info(
@@ -128,8 +144,9 @@ fn readDecodeWrite(
         std.log.err("couldn't set affinity: {}", .{e});
     };
     // printAffinity();
-    const out_start = thread_id * n_groups * 16;
-    @memset(out[out_start..out_start + n_groups * 16], .{ .bits = 0 });
+    // const out_start = thread_id * n_groups * 16;
+    // @memset(out[out_start..out_start + n_groups * 16], .{ .bits = 0 });
+    @memset(out, .{ .bits = 0 });
 
     const now = std.Io.Clock.Timestamp.now(io, .real);
     // 2nd level: groups
@@ -185,7 +202,7 @@ fn readDecodeWrite(
             @Vector(16, u32),
             @bitCast(decoded_weights),
         ) >> @splat(16));
-        const out_group_start = out_start + i * 16;
+        const out_group_start = i * 16;
 
         writePayload(@ptrCast(@alignCast(out[out_group_start .. out_group_start + 16])), bf16_values);
 
