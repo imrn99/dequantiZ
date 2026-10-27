@@ -117,7 +117,7 @@ pub fn buildTensorData(
     }
 
     for (out_shards.items, 0..) |s, i| {
-        @memcpy(out[i * s.len ..], s);
+        @memcpy(out[i * s.len ..(i+1) * s.len ], s);
         allocator.free(s);
     }
 
