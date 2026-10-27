@@ -3,5 +3,9 @@
 *.json
 *.json.gz
 *.safetensors
+*.partial
 *.bf16
 __pycache__/
+
+# ShAIrLock: opencode install dir (binaries, token, logs)
+.shairlock/opencode/

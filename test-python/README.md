@@ -21,6 +21,13 @@ needed. The output file and any raw `.bf16` references are ignored by Git.
 an existing file. `--seed` defaults to 42 and selects a deterministic NumPy PCG64
 stream. Identical arguments and locked dependencies produce identical file bytes.
 
+`--layers` defaults to 16 and selects how many `layers.{0..N-1}` blocks are
+generated, 30 tensors each. The Zig benchmark loader parses exactly layers
+0..15: generating fewer layers prints a warning and produces a file usable only
+by the Python tools. Generation streams one tensor at a time into the
+SafeTensors container (JSON header first, then each payload), so peak memory
+stays near the largest single tensor instead of the whole dataset.
+
 ## Existing Zig data flow
 
 `src/main.zig` opens the hardcoded relative path `model.safetensors`, reads its
@@ -52,8 +59,9 @@ The seven projections have these default logical dimensions:
 | `self_attn.v_proj` | 1024 × 2048 |
 
 Every layer also contains `input_layernorm.weight` and
-`post_attention_layernorm.weight` as `BF16 [2048]`. All 480 required tensors
-have real payloads, including projections the benchmark does not select. The
+`post_attention_layernorm.weight` as `BF16 [2048]`. All `30 * layers` required
+tensors (480 by default) have real payloads, including projections the
+benchmark does not select. The
 unused top-level `embed_tokens.weight` and `norm.weight` from the original model
 are omitted. The file retains metadata `{"format":"pt"}`. SafeTensors writes
 the compact JSON descriptors and contiguous data ranges; offsets are relative
@@ -73,8 +81,9 @@ projections and are nontrivial positive FP32 values.
 The selected default projection has 12,582,912 values, 6 MiB of packed weights,
 0.75 MiB of block scales, and 24 MiB of decoded BF16. The complete file is about
 468 MiB because the unchanged loader requires every layer. No dequantized
-reference tensors are stored in it. Generation holds the required tensors in
-memory for the SafeTensors writer; reference validation decodes in 64-row chunks.
+reference tensors are stored in it. Generation writes the JSON header first,
+then streams each tensor payload as it is produced; reference validation
+decodes in 64-row chunks.
 
 ## Validation and raw reference output
 
@@ -149,10 +158,16 @@ uv run --locked --project test-python python test-python/generate_nvfp4_dataset.
 ```
 
 `--shape ROWS COLS` sets the gate/up intermediate dimension and hidden dimension
-throughout the 16 layers. Rows must be positive multiples of 16; columns must be
+throughout every layer. Rows must be positive multiples of 16; columns must be
 positive multiples of 32 so the derived half-width K/V and 1.5-width Q/O
 projections also contain complete 16-value blocks. Down projections transpose
 the logical dimensions; layer norms use the hidden dimension. Supply the same
 `--shape` when using `--validate-only` for a nondefault file. Smaller workloads
 change the performance conditions and should not be compared directly with the
 6144 × 2048 baseline.
+
+`--layers N` (default 16) scales the dataset linearly: each layer adds 30
+tensors and about 1/16 of the default file size. Values below 16 print a
+warning because the Zig benchmark loader requires layers 0..15; use them for
+fast Python-side iteration on small synthetic datasets. Supply the same
+`--layers` when using `--validate-only` for a nondefault file.

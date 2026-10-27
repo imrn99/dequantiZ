@@ -15,8 +15,18 @@ from generate_nvfp4_dataset import (
     generate_tensors,
     projection_shapes,
     validate_dataset,
+    write_dataset,
 )
 from main import decode_chunk, truncate_bf16_bits
+
+
+def raw_bytes(tensor):
+    """Comparable raw bytes for every SafeTensors dtype used by the schema."""
+    if tensor.dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.bfloat16:
+        tensor = tensor.view(torch.uint16)
+    return tensor.reshape(-1).numpy().tobytes()
 
 
 class ReferenceTests(unittest.TestCase):
@@ -69,16 +79,52 @@ class DatasetTests(unittest.TestCase):
         self.assertEqual(schema["layers.15.input_layernorm.weight"], ("BF16", [2048]))
         self.assertEqual(schema["layers.15.self_attn.o_proj.weight"], ("U8", [2048, 1536]))
 
+    def test_layer_count_parametrizes_the_schema(self):
+        schema = expected_schema((80, 32), layers=2)
+        self.assertEqual(len(schema), 60)
+        self.assertIn("layers.1.post_attention_layernorm.weight", schema)
+        self.assertNotIn("layers.2.input_layernorm.weight", schema)
+        for layers in (0, -3):
+            with self.subTest(layers=layers), self.assertRaises(ValueError):
+                expected_schema((80, 32), layers=layers)
+
+    def test_streamed_writer_matches_save_file_payloads(self):
+        # The streaming writer arranges the file differently than
+        # safetensors.torch.save_file, but every payload must stay identical.
+        shape = (48, 32)
+        with tempfile.TemporaryDirectory() as directory:
+            names = ("streamed.safetensors", "buffered.safetensors")
+            streamed, buffered = [Path(directory) / name for name in names]
+            write_dataset(streamed, shape, seed=7, layers=2)
+            save_file(generate_tensors(shape, 7, layers=2), buffered, metadata={"format": "pt"})
+            self.assertEqual(streamed.stat().st_size, buffered.stat().st_size)
+            with safe_open(streamed, framework="pt") as left, safe_open(buffered, framework="pt") as right:
+                self.assertEqual(set(left.keys()), set(right.keys()))
+                for name in left.keys():
+                    one, other = left.get_tensor(name), right.get_tensor(name)
+                    self.assertEqual(one.dtype, other.dtype)
+                    self.assertEqual(tuple(one.shape), tuple(other.shape))
+                    self.assertEqual(raw_bytes(one), raw_bytes(other))
+
+    def test_custom_layer_count_generates_and_validates(self):
+        shape = (32, 32)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "two_layers.safetensors"
+            write_dataset(path, shape, seed=5, layers=2)
+            self.assertGreater(validate_dataset(path, shape, layers=2), 0)
+            with safe_open(path, framework="pt") as dataset:
+                self.assertEqual(len(dataset.keys()), 60)
+
     def test_file_determinism_roundtrip_and_reference_bytes(self):
         # More than CHUNK_ROWS exercises both full and final partial chunks.
         shape = (80, 32)
         with tempfile.TemporaryDirectory() as directory:
             a, b, changed, reference = [Path(directory) / name for name in ("a.safetensors", "b.safetensors", "c.safetensors", "reference.bf16")]
             for path, seed in ((a, 42), (b, 42), (changed, 43)):
-                save_file(generate_tensors(shape, seed), path, metadata={"format": "pt"})
+                write_dataset(path, shape, seed)
             self.assertEqual(a.read_bytes(), b.read_bytes())
             self.assertNotEqual(a.read_bytes(), changed.read_bytes())
-            self.assertGreater(validate_dataset(a, shape, reference), 0)
+            self.assertGreater(validate_dataset(a, shape, reference_output=reference), 0)
             with safe_open(a, framework="pt") as dataset:
                 _, _, fp32 = decode_chunk(
                     dataset.get_tensor(GATE_PREFIX + ".weight"),
