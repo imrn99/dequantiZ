@@ -236,20 +236,30 @@ inline fn writePayload(
               [dst] "r" (dst),
             : .{ .memory = true });
     } else if (builtin.cpu.arch == std.Target.Cpu.Arch.aarch64 and
-        std.Target.x86.featureSetHas(builtin.cpu.features, std.Target.aarch64.Feature.neon))
+        std.Target.aarch64.featureSetHas(builtin.cpu.features, std.Target.aarch64.Feature.neon))
     {
         // TODO: impl ARM inline asm; STNP instr?
         // https://www.scs.stanford.edu/~zyedidia/arm64/stnp_fpsimd.html
-        return;
+        // https://instructionsets.com/arm/stnp/
+        // https://gcc.gnu.org/onlinedocs/gcc/Machine-Constraints.html
+        const halves: [2]@Vector(8, u16) = @bitCast(value);
+
+        asm volatile (
+            \\stnp %[lo:q], %[hi:q], [%[dst]]
+            :
+            : [lo] "w" (halves[0]),
+              [hi] "w" (halves[1]),
+              [dst] "r" (dst),
+            : .{ .memory = true });
     } else {
         dst.* = value;
     }
 }
 
 fn pinCurrentThread(core_id: usize) !void {
-    comptime if (builtin.target.os.tag != std.Target.Os.Tag.linux) {
+    if (builtin.target.os.tag != std.Target.Os.Tag.linux) {
         return error.UnsupportedOS;
-    };
+    }
 
     var mask: linux.cpu_set_t = undefined;
     @memset(&mask, 0);
