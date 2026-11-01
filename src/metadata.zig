@@ -31,7 +31,10 @@ pub fn buildLayerMetaData(
     var md: [16]LayerMetaData = undefined;
 
     for (0..16) |i| {
-        md[i] = try LayerMetaData.buildLayerMD(@intCast(i), allocator, header);
+        md[i] = LayerMetaData.buildLayerMD(@intCast(i), allocator, header) catch |e| {
+            std.log.warn("couldn't builder layer #{} metadata: {}", .{i, e});
+            continue;
+        };
     }
 
     return md;

@@ -3,11 +3,15 @@ const Io = std.Io;
 
 const dequantiZ = @import("dequantiZ");
 
-const TENSOR_FILE = "model.safetensors";
+const DEFAULT_LAYER_ID = 0;
+const DEFAULT_N_THREADS = 1;
+const DEFAULT_TENSOR_FILE = "model.safetensors";
 
 pub fn main(init: std.process.Init) !void {
-    var layer_id: u4 = 0;
-    var n_threads: usize = 1;
+    var layer_id: u4 = DEFAULT_LAYER_ID;
+    var n_threads: usize = DEFAULT_N_THREADS;
+    var tensor_file = DEFAULT_TENSOR_FILE;
+
     var args = init.minimal.args.iterate();
     _ = args.next(); // discard "./zig-out/bin/dequantiz"
 
@@ -30,6 +34,8 @@ pub fn main(init: std.process.Init) !void {
                 std.log.err("Could not parse layer ID (expected u4 in base 10): {s}", .{raw});
                 return;
             };
+        } else if (std.mem.eql(u8, arg, "--synthetic-data")) {
+            tensor_file = "synth.safetensors";
         } else {
             std.log.err("Unknown argument: {s}", .{arg});
             return;
@@ -38,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
 
     const arena: std.mem.Allocator = init.arena.allocator();
     const io = init.io;
-    const st_file = Io.Dir.cwd().openFile(io, TENSOR_FILE, .{}) catch |e|
+    const st_file = Io.Dir.cwd().openFile(io, tensor_file, .{}) catch |e|
         {
             std.log.err("while opening tensor file: {}", .{e});
             return;

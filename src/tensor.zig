@@ -80,7 +80,7 @@ pub fn buildTensorData(
         .{now.durationTo(std.Io.Clock.Timestamp.now(io, .real)).raw},
     );
 
-    // wrok split & dispatch
+    // work split & dispatch
     // for now, assume everything has "nice" dimensions
     // may have to change if I execute this on a Grace bc of the bs number of procs
 
@@ -141,11 +141,12 @@ fn readDecodeWrite(
 ) void {
     // printAffinity();
     pinCurrentThread(thread_id) catch |e| {
-        std.log.err("couldn't set affinity: {}", .{e});
+        std.log.warn(
+            "┗━thread #{} couldn't set affinity: {}",
+            .{ thread_id, e },
+        );
     };
     // printAffinity();
-    // const out_start = thread_id * n_groups * 16;
-    // @memset(out[out_start..out_start + n_groups * 16], .{ .bits = 0 });
     @memset(out, .{ .bits = 0 });
 
     const now = std.Io.Clock.Timestamp.now(io, .real);
@@ -202,9 +203,8 @@ fn readDecodeWrite(
             @Vector(16, u32),
             @bitCast(decoded_weights),
         ) >> @splat(16));
-        const out_group_start = i * 16;
 
-        writePayload(@ptrCast(@alignCast(out[out_group_start .. out_group_start + 16])), bf16_values);
+        writePayload(@ptrCast(@alignCast(out[i * 16 .. i * 16 + 16])), bf16_values);
 
         // NOTE: - commenting out the decoding logic gives pure write throughput,
         //         replacing the write code above with a memset yields the same timing
@@ -213,7 +213,7 @@ fn readDecodeWrite(
         //       - the pure write takes
         //         - ~66% of the time of the full regular routine on Intel CPU,
         //         - the same time on M1 Pro
-        // @memset(out[out_group_start..out_group_start + 16], .{ .bits = 166} );
+        // @memset(out[i * 16 .. i * 16 + 16], .{ .bits = 166} );
     }
 
     std.log.info(
@@ -238,7 +238,6 @@ inline fn writePayload(
     } else if (builtin.cpu.arch == std.Target.Cpu.Arch.aarch64 and
         std.Target.aarch64.featureSetHas(builtin.cpu.features, std.Target.aarch64.Feature.neon))
     {
-        // TODO: impl ARM inline asm; STNP instr?
         // https://www.scs.stanford.edu/~zyedidia/arm64/stnp_fpsimd.html
         // https://instructionsets.com/arm/stnp/
         // https://gcc.gnu.org/onlinedocs/gcc/Machine-Constraints.html
@@ -276,7 +275,7 @@ fn pinCurrentThread(core_id: usize) !void {
 
 fn printAffinity() void {
     const aff = std.posix.sched_getaffinity(0) catch |e| {
-        std.log.err("couldn't fetch current process affinity: {}", .{e});
+        std.log.warn("couldn't fetch current process affinity: {}", .{e});
         return;
     };
     std.log.info("affinity: 0b{b}", .{aff[0]});
