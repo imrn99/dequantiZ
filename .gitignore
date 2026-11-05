@@ -6,6 +6,6 @@
 *.partial
 *.bf16
 __pycache__/
-
-# ShAIrLock: opencode install dir (binaries, token, logs)
 .shairlock/opencode/
+*.perf
+*.perf.data
